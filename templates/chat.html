@@ -1,0 +1,439 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="chat-wrapper">
+      <div class="chat-history" id="chatHistory">
+          {% if has_more %}
+            <div class="load-more" id="loadMoreContainer">
+                <a href="#" id="loadMoreBtn" data-limit="{{ limit }}">加载更多历史消息</a>
+            </div>
+          {% endif %}
+
+          {% for msg in messages %}
+            <div class="message {% if msg.is_bot %}bot{% else %}user{% endif %}" data-message-id="{{ msg.id }}">
+                <div class="message-avatar">
+                    {% if msg.is_bot %}👨‍⚕️{% else %}👤{% endif %}
+                </div>
+                <div class="message-content">
+                      <div class="bubble">{{ msg.content | replace('\n', '<br>') | safe }}</div>
+                      <div class="meta">
+                         <span>{{ msg.created_at | china_time }}</span>
+                         <button type="button" class="delete-btn" data-message-id="{{ msg.id }}">删除</button>
+                      </div>
+                </div>
+            </div>
+          {% endfor %}
+      </div>
+
+      <form class="input-area" id="messageForm">
+          <textarea id="messageInput" name="message" rows="1" placeholder="输入消息... (Shift+Enter换行，Enter发送)" required></textarea>
+          <button type="submit" class="btn btn-primary" id="sendBtn">发送</button>
+      </form>
+  </div>
+
+  <script>
+      const chatHistory = document.getElementById('chatHistory');
+      const messageForm = document.getElementById('messageForm');
+      const messageInput = document.getElementById('messageInput');
+      const sendBtn = document.getElementById('sendBtn');
+
+      // HTML转义函数
+      function escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+      }
+
+      // 格式化文本，将换行转换为<br>，同时转义HTML
+      function formatText(text) {
+          return escapeHtml(text).replace(/\n/g, '<br>');
+      }
+
+      // 滚动到底部的辅助函数
+      function scrollToBottom() {
+          // 强制浏览器重新计算布局
+          const forceReflow = function() {
+              chatHistory.style.overflow = 'hidden';
+              chatHistory.offsetHeight; // 强制重排
+              chatHistory.style.overflow = 'auto';
+          };
+          
+          const scroll = function() {
+              // 先强制重排
+              forceReflow();
+              
+              // 直接设置scrollTop为最大值
+              chatHistory.scrollTop = chatHistory.scrollHeight;
+              
+              // 备用方案：使用scrollIntoView
+              const lastChild = chatHistory.lastElementChild;
+              if (lastChild && lastChild.scrollIntoView) {
+                  try {
+                      lastChild.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
+                  } catch(e) {
+                      // 如果scrollIntoView失败，忽略错误
+                  }
+              }
+          };
+          
+          // 立即尝试滚动
+          scroll();
+          
+          // 使用requestAnimationFrame确保DOM已更新
+          requestAnimationFrame(function() {
+              scroll();
+              // 延迟确保内容完全渲染（特别是图片、字体等加载后）
+              setTimeout(scroll, 50);
+              setTimeout(scroll, 150);
+          });
+      }
+
+      // 添加消息到聊天历史
+      function addMessage(message, isBot) {
+          const messageDiv = document.createElement('div');
+          messageDiv.className = `message ${isBot ? 'bot' : 'user'}`;
+          messageDiv.setAttribute('data-message-id', message.id);
+          
+          // 使用服务器返回的时间格式，或格式化当前时间
+          const timeStr = message.created_at || new Date().toISOString().slice(0, 16).replace('T', ' ').replace(/-/g, '-');
+          const avatar = isBot ? '👨‍⚕️' : '👤';
+
+          messageDiv.innerHTML = `
+              <div class="message-avatar">${avatar}</div>
+              <div class="message-content">
+                  <div class="bubble">${formatText(message.content)}</div>
+                  <div class="meta">
+                      <span>${timeStr}</span>
+                      <button type="button" class="delete-btn" data-message-id="${message.id}">删除</button>
+                  </div>
+              </div>
+          `;
+          
+          // 将新消息追加到末尾（而不是插入到"加载更多"之前）
+          // 这样可以确保新消息总是在最底部
+          chatHistory.appendChild(messageDiv);
+          
+          // 滚动到底部
+          scrollToBottom();
+      }
+
+      // 添加加载动画
+      function addLoadingIndicator() {
+          const loadingDiv = document.createElement('div');
+          loadingDiv.className = 'message bot loading';
+          loadingDiv.id = 'loadingIndicator';
+          loadingDiv.innerHTML = `
+              <div class="message-avatar">👨‍⚕️</div>
+              <div class="message-content">
+                  <div class="bubble">
+                      <div class="loading-spinner"></div>
+                      <span>心理医生正在思考...</span>
+                  </div>
+              </div>
+          `;
+          
+          // 将加载动画追加到末尾，确保它在最底部
+          chatHistory.appendChild(loadingDiv);
+          
+          // 滚动到底部
+          scrollToBottom();
+      }
+
+      // 移除加载动画
+      function removeLoadingIndicator() {
+          const loading = document.getElementById('loadingIndicator');
+          if (loading) {
+              loading.remove();
+          }
+      }
+
+      // 发送消息
+      messageForm.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          
+          const content = messageInput.value.trim();
+          if (!content) return;
+
+          // 保存原始内容
+          const originalContent = content;
+          
+          // 立即清空输入框，给用户即时反馈
+          messageInput.value = '';
+          
+          // 禁用输入框和按钮
+          messageInput.disabled = true;
+          sendBtn.disabled = true;
+          sendBtn.textContent = '等待中...';
+          sendBtn.style.opacity = '0.7';
+
+          // 立即显示用户消息（临时，等待服务器响应后会用真实数据替换）
+          const now = new Date();
+          const tempUserMsg = {
+              id: 'temp-' + Date.now(),
+              content: originalContent,
+              created_at: now.getFullYear() + '-' + 
+                         String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                         String(now.getDate()).padStart(2, '0') + ' ' + 
+                         String(now.getHours()).padStart(2, '0') + ':' + 
+                         String(now.getMinutes()).padStart(2, '0')
+          };
+          
+          // 立即添加用户消息到界面
+          addMessage(tempUserMsg, false);
+          
+          // 显示加载动画（在用户消息之后）
+          addLoadingIndicator();
+
+          try {
+              // 发送请求到服务器
+              const response = await fetch('/api/send_message', {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ message: originalContent })
+              });
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                  throw new Error(data.error || '发送失败');
+              }
+
+              // 移除加载动画
+              removeLoadingIndicator();
+              
+              // 移除临时用户消息
+              const tempMsg = chatHistory.querySelector(`[data-message-id="${tempUserMsg.id}"]`);
+              if (tempMsg) {
+                  tempMsg.remove();
+              }
+
+              // 添加真实的用户消息和机器人回复
+              addMessage(data.user_message, false);
+              // 稍微延迟添加AI回复，确保用户消息先显示和滚动
+              setTimeout(function() {
+                  addMessage(data.bot_message, true);
+              }, 50);
+
+          } catch (error) {
+              console.error('Error:', error);
+              removeLoadingIndicator();
+              
+              // 移除临时消息
+              const tempMsg = chatHistory.querySelector(`[data-message-id="${tempUserMsg.id}"]`);
+              if (tempMsg) {
+                  tempMsg.remove();
+              }
+              
+              // 恢复输入框内容
+              messageInput.value = originalContent;
+              
+              alert('发送失败：' + error.message);
+          } finally {
+              // 恢复输入框和按钮
+              messageInput.disabled = false;
+              sendBtn.disabled = false;
+              sendBtn.textContent = '发送';
+              sendBtn.style.opacity = '1';
+              messageInput.focus();
+          }
+      });
+
+      // 删除消息
+      chatHistory.addEventListener('click', async function(e) {
+          if (e.target.classList.contains('delete-btn')) {
+              const messageId = e.target.getAttribute('data-message-id');
+              if (!confirm('确定要删除这条消息吗？')) {
+                  return;
+              }
+
+              try {
+                  const response = await fetch(`/delete_message/${messageId}`, {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      }
+                  });
+
+                  const data = await response.json();
+                  
+                  if (response.ok && data.success) {
+                      const msgElement = chatHistory.querySelector(`[data-message-id="${messageId}"]`);
+                      if (msgElement) {
+                          msgElement.remove();
+                      }
+                  } else {
+                      alert('删除失败：' + (data.error || '未知错误'));
+                  }
+              } catch (error) {
+                  console.error('Error:', error);
+                  alert('删除失败：' + error.message);
+              }
+          }
+      });
+
+      // 加载更多历史消息（保持滚动位置）
+      const loadMoreBtn = document.getElementById('loadMoreBtn');
+      if (loadMoreBtn) {
+          loadMoreBtn.addEventListener('click', async function(e) {
+              e.preventDefault();
+              
+              // 如果正在加载，直接返回
+              if (this.classList.contains('loading')) {
+                  return;
+              }
+              
+              const currentLimit = parseInt(this.getAttribute('data-limit'));
+              const newLimit = currentLimit + 10;
+              
+              // 保存当前滚动位置和第一个可见消息的引用
+              const scrollTop = chatHistory.scrollTop;
+              const loadMoreContainer = document.getElementById('loadMoreContainer');
+              const firstMessage = loadMoreContainer ? loadMoreContainer.nextElementSibling : chatHistory.querySelector('.message');
+              const firstMessageId = firstMessage ? firstMessage.getAttribute('data-message-id') : null;
+              const firstMessageOffset = firstMessage ? firstMessage.offsetTop : 0;
+              
+              // 设置加载状态
+              const originalText = this.textContent;
+              this.textContent = '加载中...';
+              this.classList.add('loading');
+              this.style.pointerEvents = 'none';
+              
+              try {
+                  // 使用 fetch 获取新内容
+                  const response = await fetch(`/chat?limit=${newLimit}`);
+                  const html = await response.text();
+                  
+                  // 创建一个临时容器来解析HTML
+                  const tempDiv = document.createElement('div');
+                  tempDiv.innerHTML = html;
+                  
+                  // 获取新的聊天历史内容
+                  const newChatHistory = tempDiv.querySelector('#chatHistory');
+                  if (newChatHistory) {
+                      // 找到新的"加载更多"按钮和消息列表
+                      const newLoadMoreContainer = newChatHistory.querySelector('.load-more');
+                      const newMessages = Array.from(newChatHistory.querySelectorAll('.message'));
+                      
+                      // 更新"加载更多"按钮
+                      if (newLoadMoreContainer && loadMoreContainer) {
+                          const newLoadMoreBtn = newLoadMoreContainer.querySelector('a');
+                          if (newLoadMoreBtn) {
+                              loadMoreBtn.setAttribute('data-limit', newLoadMoreBtn.getAttribute('data-limit'));
+                          } else {
+                              // 如果没有更多消息了，移除"加载更多"按钮
+                              loadMoreContainer.remove();
+                          }
+                      } else {
+                          // 如果没有更多消息了，移除"加载更多"按钮
+                          if (loadMoreContainer) {
+                              loadMoreContainer.remove();
+                          }
+                      }
+                      
+                      // 收集当前已存在的消息ID
+                      const existingIds = new Set();
+                      chatHistory.querySelectorAll('.message').forEach(function(msg) {
+                          existingIds.add(msg.getAttribute('data-message-id'));
+                      });
+                      
+                      // 找出第一个已存在的消息位置（作为插入参考点）
+                      // 必须在loadMoreContainer存在时定义
+                      const firstExistingMessage = loadMoreContainer ? loadMoreContainer.nextElementSibling : chatHistory.querySelector('.message');
+                      
+                      // 收集服务器返回的所有消息（已经按正确顺序排列：旧→新）
+                      const allMessageElements = Array.from(newMessages);
+                      
+                      // 找出需要插入的新消息（保持服务器返回的顺序）
+                      const messagesToInsert = [];
+                      for (let i = 0; i < allMessageElements.length; i++) {
+                          const msg = allMessageElements[i];
+                          const msgId = msg.getAttribute('data-message-id');
+                          if (!existingIds.has(msgId)) {
+                              messagesToInsert.push(msg);
+                          }
+                      }
+                      
+                      // 如果"加载更多"按钮存在，在它之后插入新消息
+                      if (messagesToInsert.length > 0 && loadMoreContainer && loadMoreContainer.parentNode && firstExistingMessage) {
+                          // 找到第一个已存在消息作为参考点
+                          let insertBefore = firstExistingMessage;
+                          
+                          // 按顺序插入所有新消息
+                          // 由于insertBefore会将新元素插入到参考节点之前，
+                          // 我们需要从后往前插入，或者让参考点保持固定
+                          // 更好的方法：使用appendChild然后调整顺序，或者使用文档片段
+                          const fragment = document.createDocumentFragment();
+                          messagesToInsert.forEach(function(msg) {
+                              const clonedMsg = msg.cloneNode(true);
+                              fragment.appendChild(clonedMsg);
+                          });
+                          // 一次性插入所有消息到正确位置
+                          loadMoreContainer.parentNode.insertBefore(fragment, insertBefore);
+                      } else if (messagesToInsert.length > 0) {
+                          // 如果没有"加载更多"按钮，插入到最前面
+                          const fragment = document.createDocumentFragment();
+                          messagesToInsert.forEach(function(msg) {
+                              const clonedMsg = msg.cloneNode(true);
+                              fragment.appendChild(clonedMsg);
+                          });
+                          chatHistory.insertBefore(fragment, chatHistory.firstChild);
+                      }
+                      
+                      // 恢复滚动位置：找到之前第一个可见的消息，计算位置差
+                      if (firstMessageId) {
+                          const targetMessage = chatHistory.querySelector(`[data-message-id="${firstMessageId}"]`);
+                          if (targetMessage) {
+                              // 等待DOM更新后恢复滚动位置
+                              requestAnimationFrame(function() {
+                                  const newOffset = targetMessage.offsetTop;
+                                  const offsetDiff = newOffset - firstMessageOffset;
+                                  chatHistory.scrollTop = scrollTop + offsetDiff;
+                              });
+                          }
+                      } else {
+                          // 如果没有找到目标消息，尝试保持相对位置
+                          requestAnimationFrame(function() {
+                              chatHistory.scrollTop = scrollTop;
+                          });
+                      }
+                  }
+              } catch (error) {
+                  console.error('Error loading more messages:', error);
+                  alert('加载更多消息失败：' + error.message);
+              } finally {
+                  // 恢复按钮状态
+                  this.textContent = originalText;
+                  this.classList.remove('loading');
+                  this.style.pointerEvents = '';
+              }
+          });
+      }
+
+      // 输入框自动调整高度
+      messageInput.addEventListener('input', function() {
+          this.style.height = 'auto';
+          this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+      });
+
+      // 快捷键：Enter发送，Shift+Enter换行
+      messageInput.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (!sendBtn.disabled && messageInput.value.trim()) {
+                  messageForm.dispatchEvent(new Event('submit'));
+              }
+          }
+      });
+
+      // 页面加载完成后自动滚动到底部
+      window.addEventListener('DOMContentLoaded', function() {
+          scrollToBottom();
+      });
+      
+      // 确保在页面完全加载后也滚动到底部（处理图片等异步内容）
+      window.addEventListener('load', function() {
+          scrollToBottom();
+      });
+  </script>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>📝 注册</h2>
+  <form method="post">
+      <div class="form-group">
+          <label for="username">用户名</label>
+          <input id="username" name="username" placeholder="请输入用户名" required autofocus>
+      </div>
+      <div class="form-group">
+          <label for="password">密码</label>
+          <input id="password" name="password" type="password" placeholder="请输入密码" required>
+      </div>
+      <div class="form-group">
+          <label for="password2">确认密码</label>
+          <input id="password2" name="password2" type="password" placeholder="请再次输入密码" required>
+      </div>
+      <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">注册</button>
+          <a href="{{ url_for('login') }}" class="btn btn-ghost">已有账号？去登录</a>
+      </div>
+  </form>
+{% endblock %}

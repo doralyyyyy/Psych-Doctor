@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+  <p style="font-size:14px;color:#555;margin-top:8px;">
+      这是一个简单的“心理医生”聊天网站，支持注册 / 登录、聊天记录、情绪识别和历史记忆。
+  </p>
+  <p style="font-size:14px;color:#555;">
+      请先 <a href="{{ url_for('register') }}">注册</a> 或 <a href="{{ url_for('login') }}">登录</a> 开始使用。
+  </p>
+{% endblock %}
