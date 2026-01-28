@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone, timedelta
 
 import requests
+from dotenv import load_dotenv
 from flask import (
     Flask, render_template, redirect,
     url_for, request, flash, jsonify
@@ -13,15 +14,18 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# 加载 .env 文件中的环境变量
+load_dotenv()
+
 # ================== 基础配置 ==================
 
 app = Flask(__name__)
 
 # Flask 必需配置
-app.config['SECRET_KEY'] = 'change-this-secret-key'  # 作业用可以随便写个字符串
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-secret-key')
 
 # 数据库：用 sqlite 本地文件
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///psych_doctor.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI', 'sqlite:///psych_doctor.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -31,12 +35,10 @@ login_manager.login_view = 'login'  # 未登录访问受保护页面会跳转到
 
 # ================== GPT API 配置 ==================
 
-# 从环境变量里读，如果没设置就用默认的 base url（你给的那个）
+# 从环境变量里读，如果没设置就用默认值
 GPT_BASE_URL = os.getenv('GPT_BASE_URL', 'https://aizex.top/v1')
-# 注意：这里不要写真实 key，去服务器上用 export 方式设置
-GPT_API_KEY = os.getenv('GPT_API_KEY', 'sk-YZybkMjhj6XN6PT0iCFueG4cp0KuzXCJWRR5RnXuZuODU8hA')
-
-GPT_MODEL = os.getenv('GPT_MODEL', 'gpt-5')  # 根据你那边实际支持的模型名修改
+GPT_API_KEY = os.getenv('GPT_API_KEY', '')
+GPT_MODEL = os.getenv('GPT_MODEL', 'gpt-5')
 
 # 中国时区（UTC+8）
 CHINA_TZ = timezone(timedelta(hours=8))
